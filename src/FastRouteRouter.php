@@ -64,6 +64,14 @@ EOT;
     public const CONFIG_CACHE_FILE = 'cache_file';
 
     /**
+     * @const string Configuration key used to enable using apcu cache
+     */
+    public const USE_APCU_CACHE = 'use_apcu_cache';
+
+
+    private const CACHE_KEY = 'invajo_fastroute_cache';
+
+    /**
      * Standard HTTP methods against which to test HEAD/OPTIONS requests.
      */
     public const HTTP_METHODS_STANDARD = [
@@ -90,6 +98,13 @@ EOT;
      * @var string
      */
     private $cacheFile = 'data/cache/fastroute.php.cache';
+
+    /**
+     * If set, overrides the cache file setting, and uses apcu cache
+     *
+     * @var bool
+     */
+    private $useApcuCache = false;
 
     /**
      * @var callable A factory callback that can return a dispatcher.
@@ -182,6 +197,10 @@ EOT;
 
         if (isset($config[self::CONFIG_CACHE_FILE])) {
             $this->cacheFile = (string) $config[self::CONFIG_CACHE_FILE];
+        }
+
+        if (isset($config[self::USE_APCU_CACHE])) {
+            $this->useApcuCache = (bool) $config[self::USE_APCU_CACHE];
         }
 
         if ($this->cacheEnabled) {
@@ -489,10 +508,16 @@ EOT;
      */
     private function loadDispatchData() : void
     {
-        set_error_handler(function () {
-        }, E_WARNING); // suppress php warnings
-        $dispatchData = include $this->cacheFile;
-        restore_error_handler();
+        // APCU cache takes precedence
+        $dispatchData = [];
+        if ($this->useApcuCache) {
+            $dispatchData = apcu_fetch(self::CACHE_KEY);
+        } else {
+            set_error_handler(function () {
+            }, E_WARNING); // suppress php warnings
+            $dispatchData = include $this->cacheFile;
+            restore_error_handler();
+        }
 
         // Cache file does not exist
         if (false === $dispatchData) {
@@ -523,6 +548,12 @@ EOT;
      */
     private function cacheDispatchData(array $dispatchData)
     {
+
+        // apcu cache takes precedence
+        if ($this->useApcuCache) {
+            return apcu_store(self::CACHE_KEY, $dispatchData);
+        }
+
         $cacheDir = dirname($this->cacheFile);
 
         if (! is_dir($cacheDir)) {
